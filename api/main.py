@@ -1,17 +1,10 @@
 import pymongo
-from flask import Flask, request, jsonify
+import pandas as pd
+import numpy as np
+from flask import Flask, jsonify
 from flask_restx import Api, Namespace, Resource
-from bson import ObjectId
-
-
-user = "dmar"
-passw = "jJ0i1oGohezcEsGb"
-host = "pikachu.eoylcqy.mongodb.net"
-database = "kpis"
 
 app = Flask(__name__)
-
-# Create api v1
 api = Api(app, version='1.0',
           title='Customers API',
           description="""
@@ -21,53 +14,53 @@ api = Api(app, version='1.0',
           contact="Diego",
           endpoint="/api/v1")
 
-# Define the connect and disconnect
-def connect():
-    client = pymongo.MongoClient(
-    "mongodb+srv://{0}:{1}@{2}/{3}?retryWrites=true&w=majority"
-    .format(user, passw, host, database))
-    conn = client[database]
-    return conn, client
+user = "dmar"
+passw = "jJ0i1oGohezcEsGb"
+host = "pikachu.eoylcqy.mongodb.net"
+database = "kpis"
 
-def disconnect(conn, client):
-    client.close()
+client = pymongo.MongoClient(
+    "mongodb+srv://{0}:{1}@{2}/{3}?retryWrites=true&w=majority".format(user, passw, host, database))
+db = client[database]
 
+# Get data from MongoDB
+def load_data(query):
+    try:
+        cursor = db.customers.find(query)
+        data = pd.DataFrame(list(cursor))
+        data = data.drop('_id', axis=1) # drop the MongoDB ObjectId field
+    except Exception as e:
+        print(e)
+        data = pd.DataFrame()
+    return data
 
-# --------------------------
+kpi_ns = Namespace('kpi', description='KPI operations')
+customer_ns = Namespace('customer', description='Customer operations')
 
-# Get API and Flask stuff
-customers = Namespace('customers', path='/api/v1')
-api.add_namespace(customers)
-
-@customers.route("/customers")
-class get_all_customers(Resource):
+@kpi_ns.route('/')
+class KPI(Resource):
     def get(self):
-        conn, client = connect()
-        result = list(conn.customers.find())
-        # Convert ObjectId to string
-        for customer in result:
-            customer['_id'] = str(customer['_id'])
-        disconnect(conn, client)
-        return jsonify({'result': result})
+        customer_df = load_data({})
+        num_customers = customer_df["customer_id"].nunique()
+        avg_age = np.mean(customer_df["age"])
+        num_active = customer_df["club_member_status"].nunique()
+        num_fashion = customer_df["fashion_news_frequency"].nunique()
 
-@customers.route("/customers/<string:_id>")
-@customers.doc(params={'_id': 'The ID of the customer'})
-class get_select_customer(Resource):
-    def get(self, _id):
-        conn, client = connect()
-        result = conn.customers.find_one({"_id": ObjectId(_id)})
-        # Convert ObjectId to string
-        result['_id'] = str(result['_id'])
-        disconnect(conn, client)
-        return jsonify({'result': result})
+        return {
+            "num_customers": num_customers,
+            "avg_age": avg_age,
+            "num_active": num_active,
+            "num_fashion": num_fashion
+        }
 
-# 127.0.0.1/hello
-@api.route("/hello")
-class hello(Resource):
+@customer_ns.route('/')
+class Customer(Resource):
     def get(self):
-        return {"content": "Hello from Flask"}
-
-# --------------------------
+        customer_df = load_data({})
+        return customer_df.to_dict('records')
+        
+api.add_namespace(kpi_ns)
+api.add_namespace(customer_ns)
 
 if __name__ == '__main__':
     app.run(debug=True)
