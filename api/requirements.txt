@@ -2,4 +2,6 @@ pymongo[tls, srv]
 Flask
 gunicorn==20.1.0
 flask_restx
-urllib.parse
+pandas
+numpy
+flask_httpauth
