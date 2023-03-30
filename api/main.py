@@ -1,18 +1,11 @@
 import pymongo
 import pandas as pd
 import numpy as np
-from flask import Flask, jsonify
-from flask_restx import Api, Namespace, Resource
+from flask import Flask, jsonify, request
+from flask_restx import Api, Resource, Namespace
+from flask_httpauth import HTTPBasicAuth
 
-app = Flask(__name__)
-api = Api(app, version='1.0',
-          title='Customers API',
-          description="""
-        API endpoints used to communicate Customers
-        between Mongo database and streamlit
-        """,
-          contact="Diego",
-          endpoint="/api/v1")
+# Load data from MongoDB
 
 user = "dmar"
 passw = "jJ0i1oGohezcEsGb"
@@ -20,13 +13,40 @@ host = "pikachu.eoylcqy.mongodb.net"
 database = "kpis"
 
 client = pymongo.MongoClient(
-    "mongodb+srv://{0}:{1}@{2}/{3}?retryWrites=true&w=majority".format(user, passw, host, database))
+    "mongodb+srv://{0}:{1}@{2}/{3}?retryWrites=true&w=majority"
+    .format(user, passw, host, database))
 db = client[database]
 
-# Get data from MongoDB
-def load_data(query):
+app = Flask(__name__)
+api = Api(app, version='1.0',
+          title='H&M API',
+          description="""
+        API endpoints used to communicate H&M
+        between Mongo database and streamlit
+        """,
+          contact="Diego",
+          endpoint="/api/v1")
+
+# Define valid API keys
+api_keys = {
+    "api_key_1": "user1",
+    "api_key_2": "user2"
+}
+
+# Create HTTPBasicAuth object
+auth = HTTPBasicAuth()
+
+# Verify the API key entered by the user matches the one in the dictionary
+@auth.verify_password
+def verify_api_key(api_key, password):
+    if api_key in api_keys and api_keys[api_key] == password:
+        return api_key
+
+# Require authentication for certain routes
+@auth.login_required
+def get_customer_data(query):
     try:
-        cursor = db.customers.find(query)
+        cursor = db.customers.find(query).limit(1000)
         data = pd.DataFrame(list(cursor))
         data = data.drop('_id', axis=1) # drop the MongoDB ObjectId field
     except Exception as e:
@@ -34,33 +54,70 @@ def load_data(query):
         data = pd.DataFrame()
     return data
 
-kpi_ns = Namespace('kpi', description='KPI operations')
-customer_ns = Namespace('customer', description='Customer operations')
+@auth.login_required
+def load_transaction_data(query):
+    try:
+        cursor = db.transactions.find(query).limit(1000)
+        data = pd.DataFrame(list(cursor))
+        data = data.drop('_id', axis=1) # drop the MongoDB ObjectId field
+    except Exception as e:
+        print(e)
+        data = pd.DataFrame()
+    return data
 
-@kpi_ns.route('/')
-class KPI(Resource):
-    def get(self):
-        customer_df = load_data({})
-        num_customers = customer_df["customer_id"].nunique()
-        avg_age = np.mean(customer_df["age"])
-        num_active = customer_df["club_member_status"].nunique()
-        num_fashion = customer_df["fashion_news_frequency"].nunique()
+@auth.login_required
+def load_articles_data(query):
+    try:
+        cursor = db.articles.find(query).limit(1000)
+        data = pd.DataFrame(list(cursor))
+        data = data.drop('_id', axis=1) # drop the MongoDB ObjectId field
+    except Exception as e:
+        print(e)
+        data = pd.DataFrame()
+    return data
 
-        return {
-            "num_customers": num_customers,
-            "avg_age": avg_age,
-            "num_active": num_active,
-            "num_fashion": num_fashion
-        }
+# ------------------------
 
-@customer_ns.route('/')
-class Customer(Resource):
-    def get(self):
-        customer_df = load_data({})
-        return customer_df.to_dict('records')
-        
-api.add_namespace(kpi_ns)
+# Namespaces
+
+# Get customer stuff
+
+customer_ns = Namespace('customer', description='Customer data', path='/api/v1')
 api.add_namespace(customer_ns)
+
+@customer_ns.route('/customers')
+class Customers(Resource):
+    @auth.login_required
+    def get(self):
+        query = request.args.get('query')
+        customer_df = get_customer_data(query)
+        return jsonify(customer_df.to_dict(orient='records'))
+    
+# Get transactions stuff
+
+transactions_ns = Namespace('transactions', description='Transactions', path='/api/v1')
+api.add_namespace(transactions_ns)
+
+@transactions_ns.route('/transactions')
+class Transactions(Resource):
+    @auth.login_required
+    def get(self):
+        query = request.args.get('query')
+        transactions_df = load_transaction_data(query)
+        return jsonify(transactions_df.to_dict(orient='records'))
+    
+# Get articles stuff
+
+articles_ns = Namespace('articles', description='Articles', path='/api/v1')
+api.add_namespace(articles_ns)
+
+@articles_ns.route('/articles')
+class Articles(Resource):
+    @auth.login_required
+    def get(self):
+        query = request.args.get('query')
+        articles_df = load_articles_data(query)
+        return jsonify(articles_df.to_dict(orient='records'))
 
 if __name__ == '__main__':
     app.run(debug=True)
