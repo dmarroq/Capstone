@@ -8,49 +8,57 @@ customers_url = "https://api-dot-virtual-ego-376415.oa.r.appspot.com/api/v1/cust
 transactions_url = "http://api-dot-virtual-ego-376415.oa.r.appspot.com/api/v1/transactions"
 articles_url = "http://api-dot-virtual-ego-376415.oa.r.appspot.com/api/v1/articles"
 
+# Define valid usernames and passwords
 users = {
-    "api_key_1": "user1",
-    "api_key_2": "user2"
+    "api_key_1": ("user1", "password1"),
+    "api_key_2": ("user2", "password2")
 }
-# Verify the password entered by the user matches the one in the dictionary
-def verify_user(username, password):
-    if username in users and password == users[username]:
+
+# Verify the username and password entered by the user are valid
+def verify_user(api_key, username, password):
+    if api_key in users and username == users[api_key][0] and password == users[api_key][1]:
         return True
     return False
 
-# st.image("/home/d_marroquin/Capstone/frontend/H&MLogo.jpg", width=200)
+def authenticate(api_key):
+    username, password = users[api_key]
+    response_customers = requests.get(customers_url, auth=HTTPBasicAuth(username, password), headers={'api_key': api_key}).json()
+    response_transactions = requests.get(transactions_url, auth=HTTPBasicAuth(username, password), headers={'api_key': api_key}).json()
+    response_articles = requests.get(articles_url, auth=HTTPBasicAuth(username, password), headers={'api_key': api_key}).json()
+
+    data_customers = response_customers
+    customer_df = pd.DataFrame(data_customers)
+    data_transactions = response_transactions
+    transactions_df = pd.DataFrame(data_transactions)
+    data_articles = response_articles
+    articles_df = pd.DataFrame(data_articles)
+
+    return customer_df, transactions_df, articles_df
+
+st.image("https://upload.wikimedia.org/wikipedia/commons/5/53/H%26M-Logo.svg", width=200)
 
 def run_app():
     st.title("H&M Dashboard")
     st.markdown("Welcome to the H&M dashboard.")
+
     # Get data from API
     username = st.text_input("Username")
     password = st.text_input("Password", type="password")
-    login = st.button("Login")
-    if login:
-        if verify_user(username, password):
-            response_customers = requests.get(customers_url, auth=HTTPBasicAuth(username, password))
-            response_transactions = requests.get(transactions_url, auth=HTTPBasicAuth(username, password))
-            response_articles = requests.get(articles_url, auth=HTTPBasicAuth(username, password))
-            data_customers = response_customers.json()
-            customer_df = pd.DataFrame(data_customers)
-            data_transactions = response_transactions.json()
-            transactions_df = pd.DataFrame(data_transactions)
-            data_articles = response_articles.json()
-            articles_df = pd.DataFrame(data_articles)
-            logged_in = True
-        else:
-            st.warning("Invalid username or password")
-            logged_in = False
+    api_key = "api_key_1"
+    logged_in = st.button("Login")
+
+    if verify_user(api_key, username, password):
+        customer_df, transactions_df, articles_df = authenticate(api_key)
+        logged_in = True
     else:
         logged_in = False
 
     # Display the login form if the user is not logged in
     if not logged_in:
+        st.warning("Invalid username or password")
         return
-
     # ---------------------------------------------------
-
+    
     # Create the Streamlit app
     st.title("H&M KPIs")
 
@@ -245,3 +253,4 @@ def run_app():
     
 if __name__ == '__main__':
     run_app()
+
