@@ -3,3 +3,4 @@ pandas
 requests
 streamlit==1.20.0
 requests.auth
+requests
